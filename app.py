@@ -166,10 +166,22 @@ if prompt := st.chat_input("メッセージを入力してください (例: メ
                     result = loop.run_until_complete(run_agent(prompt))
                     loop.close()
                     
+                    # デバッグ情報を表示
+                    with st.expander("🔍 デバッグ情報", expanded=False):
+                        st.write("**Result Type:**", type(result))
+                        st.write("**Result:**", result)
+                        if hasattr(result, '__dict__'):
+                            st.write("**Result Attributes:**", result.__dict__)
+                    
                     # 結果を取得
-                    if hasattr(result, 'messages') and result.messages:
+                    assistant_message = None
+                    
+                    # final_outputを確認
+                    if hasattr(result, 'final_output'):
+                        assistant_message = str(result.final_output)
+                        st.markdown(assistant_message)
+                    elif hasattr(result, 'messages') and result.messages:
                         # 最後のアシスタントメッセージを取得
-                        assistant_message = None
                         for msg in reversed(result.messages):
                             if msg.role == "assistant" and hasattr(msg, 'content'):
                                 if isinstance(msg.content, list):
@@ -189,6 +201,11 @@ if prompt := st.chat_input("メッセージを入力してください (例: メ
                             st.markdown(assistant_message)
                     else:
                         assistant_message = str(result)
+                        st.markdown(assistant_message)
+                    
+                    # メッセージが取得できなかった場合のフォールバック
+                    if not assistant_message:
+                        assistant_message = "処理が完了しました。"
                         st.markdown(assistant_message)
                     
                     # アシスタントメッセージを保存
