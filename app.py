@@ -1,8 +1,9 @@
 import streamlit as st
 import subprocess
 import platform
-import os
+import asyncio
 from openai import OpenAI
+from openai_agents_sdk import Agent, Runner, function_tool
 
 # ページ設定
 st.set_page_config(
@@ -33,13 +34,14 @@ with st.sidebar:
     - 「ブラウザを開いて」
     """)
 
-# アプリケーション起動関数
+# アプリケーション起動関数をツールとして定義
+@function_tool
 def open_application(app_name: str) -> str:
     """
     指定されたアプリケーションを起動する
     
     Args:
-        app_name: 起動するアプリケーション名
+        app_name: 起動するアプリケーション名 (例: メモ帳, 電卓, ブラウザ)
     
     Returns:
         実行結果のメッセージ
@@ -108,26 +110,30 @@ def open_application(app_name: str) -> str:
     except Exception as e:
         return f"❌ エラーが発生しました: {str(e)}"
 
-# Function calling用のツール定義
-tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "open_application",
-            "description": "ユーザーが要求したアプリケーションを起動します。メモ帳、電卓、ブラウザなどのアプリケーションを開くことができます。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "app_name": {
-                        "type": "string",
-                        "description": "起動するアプリケーションの名前 (例: メモ帳, 電卓, ブラウザ)"
-                    }
-                },
-                "required": ["app_name"]
-            }
-        }
-    }
-]
+# エージェントの実行関数
+async def run_agent(api_key: str, user_message: str):
+    """
+    OpenAI Agents SDKを使用してエージェントを実行
+    """
+    client = OpenAI(api_key=api_key)
+    
+    # エージェントの作成
+    agent = Agent(
+        name="AppLauncher",
+        instructions="""あなたはユーザーの要求に応じてアプリケーションを起動するアシスタントです。
+ユーザーが「〜を開いて」「〜を起動して」などと言った場合、open_application関数を使用してアプリケーションを起動してください。
+起動結果を日本語で分かりやすく伝えてください。""",
+        model="gpt-4o",
+        tools=[open_application],
+    )
+    
+    # ランナーの作成と実行
+    runner = Runner(client=client, agent=agent)
+    
+    # メッセージの実行
+    result = await runner.run(user_message)
+    
+    return result
 
 # メイン画面
 st.title("🤖 AIエージェント - アプリ起動システム")
@@ -156,39 +162,35 @@ if prompt := st.chat_input("メッセージを入力してください (例: メ
         with st.chat_message("assistant"):
             with st.spinner("処理中..."):
                 try:
-                    client = OpenAI(api_key=api_key)
+                    # 非同期関数を同期的に実行
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    result = loop.run_until_complete(run_agent(api_key, prompt))
+                    loop.close()
                     
-                    # OpenAI APIを呼び出し
-                    response = client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {"role": "system", "content": "あなたはユーザーの要求に応じてアプリケーションを起動するアシスタントです。ユーザーが「〜を開いて」「〜を起動して」などと言った場合、open_application関数を使用してアプリケーションを起動してください。"},
-                            *st.session_state.messages
-                        ],
-                        tools=tools,
-                        tool_choice="auto"
-                    )
-                    
-                    response_message = response.choices[0].message
-                    tool_calls = response_message.tool_calls
-                    
-                    # Function callingの処理
-                    if tool_calls:
-                        for tool_call in tool_calls:
-                            if tool_call.function.name == "open_application":
-                                import json
-                                args = json.loads(tool_call.function.arguments)
-                                app_name = args.get("app_name")
-                                
-                                # アプリケーションを起動
-                                result = open_application(app_name)
-                                
-                                # 結果を表示
-                                st.markdown(result)
-                                assistant_message = result
+                    # 結果を取得
+                    if hasattr(result, 'messages') and result.messages:
+                        # 最後のアシスタントメッセージを取得
+                        assistant_message = None
+                        for msg in reversed(result.messages):
+                            if msg.role == "assistant" and hasattr(msg, 'content'):
+                                if isinstance(msg.content, list):
+                                    for content in msg.content:
+                                        if hasattr(content, 'text'):
+                                            assistant_message = content.text
+                                            break
+                                elif isinstance(msg.content, str):
+                                    assistant_message = msg.content
+                                if assistant_message:
+                                    break
+                        
+                        if assistant_message:
+                            st.markdown(assistant_message)
+                        else:
+                            assistant_message = "処理が完了しました。"
+                            st.markdown(assistant_message)
                     else:
-                        # 通常の応答
-                        assistant_message = response_message.content
+                        assistant_message = str(result)
                         st.markdown(assistant_message)
                     
                     # アシスタントメッセージを保存
