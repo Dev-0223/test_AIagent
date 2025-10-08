@@ -50,6 +50,7 @@ def open_application(app_name: str) -> str:
     Returns:
         実行結果のメッセージ
     """
+    print(f"[DEBUG] open_application called with: {app_name}")  # デバッグログ
     system = platform.system()
     
     try:
@@ -103,16 +104,23 @@ def open_application(app_name: str) -> str:
                 break
         
         if command:
+            print(f"[DEBUG] Executing command: {command}")  # デバッグログ
             if system == "Windows":
                 subprocess.Popen(command.split(), shell=True)
             else:
                 subprocess.Popen(command, shell=True)
-            return f"✅ {app_name}を起動しました!"
+            result_msg = f"✅ {app_name}を起動しました!"
+            print(f"[DEBUG] Success: {result_msg}")  # デバッグログ
+            return result_msg
         else:
-            return f"❌ 申し訳ございません。{app_name}の起動方法が見つかりませんでした。"
+            error_msg = f"❌ 申し訳ございません。{app_name}の起動方法が見つかりませんでした。"
+            print(f"[DEBUG] Not found: {error_msg}")  # デバッグログ
+            return error_msg
     
     except Exception as e:
-        return f"❌ エラーが発生しました: {str(e)}"
+        error_msg = f"❌ エラーが発生しました: {str(e)}"
+        print(f"[DEBUG] Exception: {error_msg}")  # デバッグログ
+        return error_msg
 
 # エージェントの作成
 agent = Agent(
