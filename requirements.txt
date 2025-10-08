@@ -1,2 +1,1 @@
 OpenAI==1.107.0
-AzureOpenAI==0.0.1

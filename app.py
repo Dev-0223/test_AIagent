@@ -1,196 +1,211 @@
 import streamlit as st
-from openai import OpenAI, AzureOpenAI
-import time
-import json
+import subprocess
+import platform
+import os
+from openai import OpenAI
 
 # ページ設定
 st.set_page_config(
-    page_title="AIエージェント - 質問回答システム",
+    page_title="AIエージェント - アプリ起動システム",
     page_icon="🤖",
     layout="wide"
 )
 
-# タイトル
-st.title("🤖 AIエージェント - 質問回答システム")
-st.markdown("質問を入力すると、AIが回答を記載したファイルを生成します。")
-
-# サイドバーでAPIキー設定
+# サイドバーでAPIキー入力
 with st.sidebar:
-    st.header("⚙️ 設定")
-    
-    # API選択
-    api_type = st.radio("API種類を選択", ["OpenAI", "Azure OpenAI"])
-    
-    if api_type == "OpenAI":
-        api_key = st.text_input("OpenAI APIキー", type="password", key="api_key")
-    else:
-        api_key = st.text_input("Azure OpenAI APIキー", type="password", key="api_key")
-        azure_endpoint = st.text_input("Azure エンドポイント", 
-                                       placeholder="https://your-resource.openai.azure.com/",
-                                       key="azure_endpoint")
-        deployment_name = st.text_input("デプロイメント名", 
-                                       placeholder="gpt-4o",
-                                       key="deployment_name")
-        api_version = st.text_input("APIバージョン", 
-                                    value="2024-05-01-preview",
-                                    key="api_version")
+    st.title("⚙️ 設定")
+    api_key = st.text_input(
+        "OpenAI APIキー",
+        type="password",
+        help="OpenAIのAPIキーを入力してください"
+    )
     
     st.markdown("---")
-    st.markdown("### 使い方")
     st.markdown("""
-    1. API種類を選択
-    2. 必要な情報を入力
-    3. 質問を入力して送信
-    4. AIエージェントが回答ファイルを生成
-    5. ファイルをダウンロード
+    ### 使い方
+    1. APIキーを入力
+    2. メッセージを送信
+    3. AIがアプリを起動
+    
+    ### 例
+    - 「メモ帳を開いて」
+    - 「電卓を起動して」
+    - 「ブラウザを開いて」
     """)
 
-# メインエリア
-if not api_key:
-    st.warning("⚠️ サイドバーからAPIキーを入力してください。")
-    st.stop()
+# アプリケーション起動関数
+def open_application(app_name: str) -> str:
+    """
+    指定されたアプリケーションを起動する
+    
+    Args:
+        app_name: 起動するアプリケーション名
+    
+    Returns:
+        実行結果のメッセージ
+    """
+    system = platform.system()
+    
+    try:
+        if system == "Windows":
+            app_commands = {
+                "メモ帳": "notepad.exe",
+                "notepad": "notepad.exe",
+                "電卓": "calc.exe",
+                "calculator": "calc.exe",
+                "calc": "calc.exe",
+                "ブラウザ": "explorer.exe https://www.google.com",
+                "browser": "explorer.exe https://www.google.com",
+                "エクスプローラー": "explorer.exe",
+                "explorer": "explorer.exe",
+                "ペイント": "mspaint.exe",
+                "paint": "mspaint.exe"
+            }
+        elif system == "Darwin":  # macOS
+            app_commands = {
+                "メモ帳": "open -a TextEdit",
+                "notepad": "open -a TextEdit",
+                "電卓": "open -a Calculator",
+                "calculator": "open -a Calculator",
+                "calc": "open -a Calculator",
+                "ブラウザ": "open -a Safari",
+                "browser": "open -a Safari",
+                "safari": "open -a Safari",
+                "ファインダー": "open -a Finder",
+                "finder": "open -a Finder"
+            }
+        else:  # Linux
+            app_commands = {
+                "メモ帳": "gedit",
+                "notepad": "gedit",
+                "電卓": "gnome-calculator",
+                "calculator": "gnome-calculator",
+                "calc": "gnome-calculator",
+                "ブラウザ": "xdg-open https://www.google.com",
+                "browser": "xdg-open https://www.google.com",
+                "ファイルマネージャー": "nautilus",
+                "files": "nautilus"
+            }
+        
+        # アプリケーション名を小文字で検索
+        app_lower = app_name.lower().strip()
+        command = None
+        
+        for key, cmd in app_commands.items():
+            if key.lower() in app_lower or app_lower in key.lower():
+                command = cmd
+                break
+        
+        if command:
+            if system == "Windows":
+                subprocess.Popen(command.split(), shell=True)
+            else:
+                subprocess.Popen(command, shell=True)
+            return f"✅ {app_name}を起動しました!"
+        else:
+            return f"❌ 申し訳ございません。{app_name}の起動方法が見つかりませんでした。"
+    
+    except Exception as e:
+        return f"❌ エラーが発生しました: {str(e)}"
 
-if api_type == "Azure OpenAI" and (not azure_endpoint or not deployment_name):
-    st.warning("⚠️ Azure エンドポイントとデプロイメント名を入力してください。")
-    st.stop()
+# Function calling用のツール定義
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "open_application",
+            "description": "ユーザーが要求したアプリケーションを起動します。メモ帳、電卓、ブラウザなどのアプリケーションを開くことができます。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "app_name": {
+                        "type": "string",
+                        "description": "起動するアプリケーションの名前 (例: メモ帳, 電卓, ブラウザ)"
+                    }
+                },
+                "required": ["app_name"]
+            }
+        }
+    }
+]
 
-# クライアント初期化
-if api_type == "OpenAI":
-    client = OpenAI(api_key=api_key)
-    model_name = "gpt-4o"
-else:
-    client = AzureOpenAI(
-        api_key=api_key,
-        api_version=api_version,
-        azure_endpoint=azure_endpoint
-    )
-    model_name = deployment_name
+# メイン画面
+st.title("🤖 AIエージェント - アプリ起動システム")
+st.markdown("AIに話しかけてアプリケーションを起動しましょう!")
 
 # セッション状態の初期化
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "assistant_id" not in st.session_state:
-    st.session_state.assistant_id = None
-
-# アシスタントの作成（初回のみ）
-if st.session_state.assistant_id is None:
-    try:
-        with st.spinner("AIエージェントを初期化中..."):
-            assistant = client.beta.assistants.create(
-                name="質問回答エージェント",
-                instructions="""あなたは質問に対して詳細な回答を提供するエージェントです。
-                ユーザーからの質問を受け取ったら、以下の形式で回答してください：
-                
-                1. 質問の要約
-                2. 詳細な回答
-                3. 関連情報や補足事項
-                
-                回答は分かりやすく、構造化された形式で提供してください。""",
-                model=model_name,
-                tools=[{"type": "file_search"}]
-            )
-            st.session_state.assistant_id = assistant.id
-            st.success("✅ AIエージェントの初期化が完了しました")
-    except Exception as e:
-        st.error(f"エラー: {str(e)}")
-        st.stop()
 
 # チャット履歴の表示
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        if "file_data" in message:
-            st.download_button(
-                label="📄 回答ファイルをダウンロード",
-                data=message["file_data"],
-                file_name=message["file_name"],
-                mime="text/plain"
-            )
 
 # ユーザー入力
-if prompt := st.chat_input("質問を入力してください..."):
-    # ユーザーメッセージを追加
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    # アシスタントの応答
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
+if prompt := st.chat_input("メッセージを入力してください (例: メモ帳を開いて)"):
+    if not api_key:
+        st.error("⚠️ サイドバーからOpenAI APIキーを入力してください")
+    else:
+        # ユーザーメッセージを追加
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
         
-        try:
-            # スレッドの作成
-            thread = client.beta.threads.create()
-            
-            # メッセージの追加
-            client.beta.threads.messages.create(
-                thread_id=thread.id,
-                role="user",
-                content=prompt
-            )
-            
-            # 実行の開始
-            run = client.beta.threads.runs.create(
-                thread_id=thread.id,
-                assistant_id=st.session_state.assistant_id
-            )
-            
-            # 実行完了を待つ
-            with st.spinner("回答を生成中..."):
-                while run.status in ["queued", "in_progress"]:
-                    time.sleep(1)
-                    run = client.beta.threads.runs.retrieve(
-                        thread_id=thread.id,
-                        run_id=run.id
+        # AI応答処理
+        with st.chat_message("assistant"):
+            with st.spinner("処理中..."):
+                try:
+                    client = OpenAI(api_key=api_key)
+                    
+                    # OpenAI APIを呼び出し
+                    response = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {"role": "system", "content": "あなたはユーザーの要求に応じてアプリケーションを起動するアシスタントです。ユーザーが「〜を開いて」「〜を起動して」などと言った場合、open_application関数を使用してアプリケーションを起動してください。"},
+                            *st.session_state.messages
+                        ],
+                        tools=tools,
+                        tool_choice="auto"
                     )
-            
-            if run.status == "completed":
-                # メッセージの取得
-                messages = client.beta.threads.messages.list(thread_id=thread.id)
-                assistant_message = messages.data[0].content[0].text.value
+                    
+                    response_message = response.choices[0].message
+                    tool_calls = response_message.tool_calls
+                    
+                    # Function callingの処理
+                    if tool_calls:
+                        for tool_call in tool_calls:
+                            if tool_call.function.name == "open_application":
+                                import json
+                                args = json.loads(tool_call.function.arguments)
+                                app_name = args.get("app_name")
+                                
+                                # アプリケーションを起動
+                                result = open_application(app_name)
+                                
+                                # 結果を表示
+                                st.markdown(result)
+                                assistant_message = result
+                    else:
+                        # 通常の応答
+                        assistant_message = response_message.content
+                        st.markdown(assistant_message)
+                    
+                    # アシスタントメッセージを保存
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": assistant_message
+                    })
                 
-                # 回答を表示
-                message_placeholder.markdown(assistant_message)
-                
-                # ファイルの生成
-                file_content = f"""質問回答レポート
-{'='*50}
+                except Exception as e:
+                    error_message = f"❌ エラーが発生しました: {str(e)}"
+                    st.error(error_message)
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": error_message
+                    })
 
-【質問】
-{prompt}
-
-{'='*50}
-
-【回答】
-{assistant_message}
-
-{'='*50}
-生成日時: {time.strftime('%Y-%m-%d %H:%M:%S')}
-"""
-                
-                file_name = f"回答_{time.strftime('%Y%m%d_%H%M%S')}.txt"
-                
-                # ダウンロードボタン
-                st.download_button(
-                    label="📄 回答ファイルをダウンロード",
-                    data=file_content,
-                    file_name=file_name,
-                    mime="text/plain"
-                )
-                
-                # セッションに保存
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": assistant_message,
-                    "file_data": file_content,
-                    "file_name": file_name
-                })
-            else:
-                st.error(f"エラー: 実行ステータス - {run.status}")
-                
-        except Exception as e:
-            st.error(f"エラーが発生しました: {str(e)}")
-
-# フッター
-st.markdown("---")
-st.markdown("💡 **ヒント**: 具体的な質問をすると、より詳細な回答が得られます。")
+# クリアボタン
+if st.sidebar.button("🗑️ チャット履歴をクリア"):
+    st.session_state.messages = []
+    st.rerun()
