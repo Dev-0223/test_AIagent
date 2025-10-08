@@ -3,7 +3,7 @@ import subprocess
 import platform
 import asyncio
 import os
-from agents import Agent, Runner, function_tool
+from agents import Agent, Runner
 
 # ページ設定
 st.set_page_config(
@@ -39,7 +39,6 @@ with st.sidebar:
     """)
 
 # アプリケーション起動関数をツールとして定義
-@function_tool
 def open_application(app_name: str) -> str:
     """
     指定されたアプリケーションを起動する
@@ -119,8 +118,27 @@ agent = Agent(
     name="AppLauncher",
     instructions="""あなたはユーザーの要求に応じてアプリケーションを起動するアシスタントです。
 ユーザーが「〜を開いて」「〜を起動して」などと言った場合、open_application関数を使用してアプリケーションを起動してください。
-起動結果を日本語で分かりやすく伝えてください。""",
-    tools=[open_application],
+必ず関数を実行した後、その結果を日本語で分かりやすくユーザーに伝えてください。""",
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "open_application",
+                "description": "指定されたアプリケーションを起動する。メモ帳、電卓、ブラウザなどを開くことができます。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "app_name": {
+                            "type": "string",
+                            "description": "起動するアプリケーション名 (例: メモ帳, 電卓, ブラウザ)"
+                        }
+                    },
+                    "required": ["app_name"]
+                },
+                "implementation": open_application
+            }
+        }
+    ],
 )
 
 # エージェントの実行関数
