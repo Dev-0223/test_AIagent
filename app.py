@@ -2,7 +2,7 @@ import streamlit as st
 import subprocess
 import platform
 import asyncio
-from openai import OpenAI
+import os
 from agents import Agent, Runner, function_tool
 
 # ページ設定
@@ -20,6 +20,10 @@ with st.sidebar:
         type="password",
         help="OpenAIのAPIキーを入力してください"
     )
+    
+    # APIキーを環境変数に設定
+    if api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
     
     st.markdown("---")
     st.markdown("""
@@ -110,28 +114,22 @@ def open_application(app_name: str) -> str:
     except Exception as e:
         return f"❌ エラーが発生しました: {str(e)}"
 
+# エージェントの作成
+agent = Agent(
+    name="AppLauncher",
+    instructions="""あなたはユーザーの要求に応じてアプリケーションを起動するアシスタントです。
+ユーザーが「〜を開いて」「〜を起動して」などと言った場合、open_application関数を使用してアプリケーションを起動してください。
+起動結果を日本語で分かりやすく伝えてください。""",
+    tools=[open_application],
+)
+
 # エージェントの実行関数
-async def run_agent(api_key: str, user_message: str):
+async def run_agent(user_message: str):
     """
     OpenAI Agents SDKを使用してエージェントを実行
     """
-    client = OpenAI(api_key=api_key)
-    
-    # エージェントの作成
-    agent = Agent(
-        name="AppLauncher",
-        instructions="""あなたはユーザーの要求に応じてアプリケーションを起動するアシスタントです。
-ユーザーが「〜を開いて」「〜を起動して」などと言った場合、open_application関数を使用してアプリケーションを起動してください。
-起動結果を日本語で分かりやすく伝えてください。""",
-        model="gpt-4o",
-        tools=[open_application],
-    )
-    
-    # ランナーの作成と実行
-    runner = Runner(client=client, agent=agent)
-    
     # メッセージの実行
-    result = await runner.run(user_message)
+    result = await Runner.run(agent, user_message)
     
     return result
 
@@ -165,7 +163,7 @@ if prompt := st.chat_input("メッセージを入力してください (例: メ
                     # 非同期関数を同期的に実行
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                    result = loop.run_until_complete(run_agent(api_key, prompt))
+                    result = loop.run_until_complete(run_agent(prompt))
                     loop.close()
                     
                     # 結果を取得
