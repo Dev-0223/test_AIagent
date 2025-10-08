@@ -3,7 +3,10 @@ import subprocess
 import platform
 import asyncio
 import os
-from openai import Agent, Runner, function_tool
+from openai.agents.agent import Agent
+from openai.agents.runners.local import Runner
+from openai.agents.tools import tool
+
 
 
 # ページ設定
@@ -40,7 +43,7 @@ with st.sidebar:
     """)
 
 # アプリケーション起動関数をツールとして定義
-@function_tool
+@tool
 def open_application(app_name: str) -> str:
     """
     指定されたアプリケーションを起動する
