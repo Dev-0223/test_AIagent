@@ -3,7 +3,8 @@ import subprocess
 import platform
 import asyncio
 import os
-from agents import Agent, Runner, function_tool
+from openai import Agent, Runner, function_tool
+
 
 # ページ設定
 st.set_page_config(
